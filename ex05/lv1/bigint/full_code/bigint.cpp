@@ -192,6 +192,17 @@ bigint bigint::operator<<(const bigint &b) const
 	std::vector<int> res_n = _n;
 	// insert elegantly adds 0 n times to the iterator at the beginning of the vector
 	res_n.insert(res_n.begin(), vectorToInt(b._n), 0);
+	bool zero_flag = true;
+	for (size_t i = 0; i < res_n.size(); i++)
+	{
+		if (res_n[i] != 0)
+		{
+			zero_flag = false;
+			break;
+		}
+	}
+	if (zero_flag)
+		res_n = { 0 };
 	bigint res;
 	res._n = res_n;
 	return (res);
@@ -200,13 +211,24 @@ bigint bigint::operator<<(const bigint &b) const
 bigint &bigint::operator<<=(const bigint &b)
 {
 	_n.insert(_n.begin(), vectorToInt(b._n), 0);
+	bool zero_flag = true;
+	for (size_t i = 0; i < _n.size(); i++)
+	{
+		if (_n[i] != 0)
+		{
+			zero_flag = false;
+			break;
+		}
+	}
+	if (zero_flag)
+		_n = { 0 };
 	return (*this);
 }
 
 bigint bigint::operator>>(const bigint &b) const
 {
 	std::vector<int> res_n;
-	if (b._n.size() >= _n.size())
+	if (vectorToInt(b._n) >= _n.size())
 		res_n = { 0 };
 	else
 	{
@@ -215,6 +237,7 @@ bigint bigint::operator>>(const bigint &b) const
 			it++;
 		res_n = { it, _n.cend() };
 	}
+
 	bigint res;
 	res._n = res_n;
 	return (res);
@@ -223,7 +246,7 @@ bigint bigint::operator>>(const bigint &b) const
 bigint &bigint::operator>>=(const bigint &b)
 {
 	std::vector<int> res_n;
-	if (b._n.size() >= _n.size())
+	if (vectorToInt(b._n) >= _n.size())
 		res_n = { 0 };
 	else
 	{
@@ -249,7 +272,7 @@ bigint bigint::operator++(int n)
 	(void)n;
 	bigint temp(*this);
 	*this += 1;
-	return(temp);
+	return (temp);
 }
 
 // STREAM OUTPUT
@@ -270,10 +293,15 @@ const std::vector<int> &bigint::getN() const
 static std::vector<int> intToVector(unsigned int n)
 {
 	std::vector<int> res;
-	while (n != 0)
+	if (n == 0)
+		res = { 0 };
+	else
 	{
-		res.push_back(n % 10);
-		n /= 10;
+		while (n != 0)
+		{
+			res.push_back(n % 10);
+			n /= 10;
+		}
 	}
 	return (res);
 }
