@@ -33,16 +33,29 @@ A function being `const` also constrains *what iterator types you may use inside
 
 This exercise has an unusually high density of "what should this operator return, and how" decisions, and getting them wrong tends to *compile* and then fail in ways that aren't always obvious from the test main alone.
 
-| Operator | Returns | Why |
-|---|---|---|
-| `operator+(const bigint&) const` | `bigint` (by value) | Must not mutate either operand; the result is a brand-new value. Returning a reference here is returning a reference to a local stack object that's destroyed when the function returns — undefined behavior. |
-| `operator+=(const bigint&)` | `bigint&` | Mutates `*this` and returns a reference to itself, enabling chaining (`a += b += c`) and avoiding an unnecessary copy. |
-| `operator<<`, `operator>>` (digitshift, non-assigning) | `bigint` (by value) | Same logic as `+`: must not mutate the operand. Look at the given main — `b << 10` is used inline without `b` itself changing afterward (`b++` still operates on the un-shifted `b`). |
-| `operator<<=`, `operator>>=` | `bigint&` | Mutates `*this`, returns reference to self. |
-| `operator++()` (prefix) | `bigint&` | Mutates `*this`, returns reference to the *already-updated* self. |
-| `operator++(int)` (postfix) | `bigint` (by value) | Must return the value *before* increment, as a separate object — the convention from built-in types. The `int` parameter is a dummy, never used, purely there to distinguish this overload from prefix at the declaration level. |
-| `operator==`/`!=`/`<`/`<=`/`>`/`>=` | `bool` (by value) | Returning `bool&` is a guaranteed bug — there's no meaningful object for that reference to point to without it being a dangling reference to a temporary. |
-| free `operator<<(std::ostream&, const bigint&)` | `std::ostream&` | This is what enables chaining (`std::cout << a << b`) — you must return the *same stream* you were given, not some other type. |
+| Declaration (exact signature) | Why this return type |
+|---|---|
+| `bigint();` | Default ctor — establishes the zero invariant. |
+| `bigint(unsigned int n);` | Not `explicit` — this is what lets `int` literals implicitly convert to `bigint` everywhere else in the class (see section 4). |
+| `bigint(const bigint &other);` | Copy ctor — needed for `bigint e(d);` in the given main. |
+| `bigint &operator=(const bigint &other);` | Returns `bigint&` (reference to `*this`) to support chained/expression-context assignment (`(c += a)` printed directly, `a = b = c`-style chains). |
+| `~bigint();` | — |
+| `bool operator==(const bigint &other) const;` | `bool` by value — never `bool&`, there's nothing valid for that reference to point to. |
+| `bool operator!=(const bigint &other) const;` | Same as above. |
+| `bool operator<(const bigint &other) const;` | Same as above. |
+| `bool operator<=(const bigint &other) const;` | Same as above. |
+| `bool operator>(const bigint &other) const;` | Same as above. |
+| `bool operator>=(const bigint &other) const;` | Same as above. |
+| `bigint operator+(const bigint &other) const;` | `bigint` by value — must not mutate either operand; the result is a brand-new value. Returning a reference here is returning a reference to a local stack object destroyed when the function returns — undefined behavior. |
+| `bigint &operator+=(const bigint &other);` | `bigint&` — mutates `*this`, returns a reference to itself, enabling chaining and avoiding an unnecessary copy. |
+| `bigint operator<<(const bigint &b) const;` | `bigint` by value — same logic as `+`: must not mutate the operand. The given main uses `b << 10` inline without `b` itself changing afterward (`b++` later still operates on the un-shifted `b`). |
+| `bigint &operator<<=(const bigint &b);` | `bigint&` — mutates `*this`, returns reference to self. |
+| `bigint operator>>(const bigint &b) const;` | `bigint` by value — same reasoning as `operator<<`. |
+| `bigint &operator>>=(const bigint &b);` | `bigint&` — same reasoning as `operator<<=`. |
+| `bigint &operator++();` (prefix) | `bigint&` — mutates `*this`, returns reference to the *already-updated* self. |
+| `bigint operator++(int n);` (postfix) | `bigint` by value — must return the value *before* increment, as a separate object. The `int n` parameter is a dummy, never read, purely there to distinguish this overload from prefix at the declaration level. |
+| `const std::vector<int> &getN() const;` | `const std::vector<int>&` — read-only accessor for the free stream operator; returning by reference here avoids an unnecessary copy of the whole digit container. |
+| `std::ostream &operator<<(std::ostream &os, const bigint &b);` (free function, outside the class) | `std::ostream&` — enables chaining (`std::cout << a << b`); you must return the *same stream* you were given. |
 
 **The prefix/postfix distinction is purely syntactic, not semantic, at the declaration level** — this is the "not really done intuitively" pitfall: `operator++()` and `operator++(int)` differ only by an unused `int` parameter that exists *solely* to give the compiler two distinct overloads to choose between for `++x` vs `x++`. There is nothing about the parameter that's ever read; you'll see `(void)n;` or similar to silence an unused-parameter warning. If you forget the `int` parameter on the postfix version, you've just redeclared prefix twice and the program won't compile (or worse, picks the wrong overload depending on how strict your compiler is).
 
@@ -115,7 +128,19 @@ To extract the count: walk the shift-amount `bigint`'s digit container from *mos
 - **An overload resolution mismatch between the subject's `main` and your declared parameter types will not compile at all** — always check what the given `main` actually passes to each operator (literal `int`? a `bigint`-cast value? a `const` object?) before finalizing parameter types, rather than assuming the "obvious" type.
 - **Compile with `-Wall -Wextra`** during development regardless of whether the exam's grading scripts require it — several of the real bugs hit while building this exercise (uninitialized variable, accumulation-instead-of-assignment) are exactly the class of issue these flags are designed to surface before runtime.
 
-## 10. A test checklist worth running against your own implementation
+## 10. Necessary helper functions (as actually used in this implementation)
+
+These three are what the working implementation actually relies on — listed here as what you wrote, plus one piece of duplicated logic worth noticing.
+
+**`static std::vector<int> intToVector(unsigned int n)`** — digit-decomposition, `unsigned int → vector<int>` (LSDF). Used by the `bigint(unsigned int)` constructor. Peels digits off with `% 10` / `/ 10` in a loop, which naturally produces least-significant-digit-first order. Explicitly special-cases `n == 0` to return `{0}` rather than letting the `while (n != 0)` loop fall through to an empty container — this was the fix for the original zero-construction bug described in section 1. Highest-leverage function in the whole class: every `bigint` constructed from an `unsigned int` (including `0`) goes through it.
+
+**`static unsigned int vectorToInt(const std::vector<int> &n)`** — digit-recomposition, the mirror image of the above. Used inside `operator<<`, `operator<<=`, `operator>>`, `operator>>=` to turn the `bigint`-typed shift-amount parameter's digit container back into a plain count usable as an `insert`/`erase`/loop-bound argument (see section 4). Walks the digits most-significant-first via `rbegin()`/`rend()` and accumulates `res = res * 10 + digit`.
+
+**`const std::vector<int> &bigint::getN() const`** — the const accessor used by the free-function `operator<<(std::ostream&, const bigint&)` to read the private `_n` member from outside the class, since the print logic isn't a member function.
+
+**Worth noticing, not necessarily acting on:** the "collapse an all-zero result back to the canonical `{0}`" logic (the `zero_flag` scan-and-reset) is *not* a separate helper in your code — it's written out fully, identically, inside both `operator<<` and `operator<<=`. It works correctly as-is, but if you ever modify that normalization logic, both copies need to change in lockstep, or they'll drift apart. Not a bug to fix under exam time pressure, just something to be aware of if you're scanning your own code for "where does this logic live."
+
+## 11. A test checklist worth running against your own implementation
 
 Beyond whatever the given `main` shows you, deliberately exercise:
 
@@ -127,3 +152,68 @@ Beyond whatever the given `main` shows you, deliberately exercise:
 - Self-referencing operations: `a += a`, `a <<= a`, `a >>= a`, `a = a` — confirm no aliasing bugs from reading and mutating the same underlying container in one operation.
 - Both `==`/`!=` and the four ordering operators across equal values, and values that differ only in length.
 - Full prefix/postfix increment behavior: confirm postfix returns the value *before* the increment while the object itself ends up incremented, and that a postfix call crossing a carry boundary (e.g. `9` or `99` incrementing) produces the correct carried result.
+
+## 12. Full declaration skeleton (reproduce this from memory under exam conditions)
+
+This is the exact class shape that ended up working today — the goal under exam time pressure is to be able to write this header out without hesitating on any signature, then fill in bodies using the logic from sections 1–10.
+
+```cpp
+#ifndef BIGINT_HPP
+#define BIGINT_HPP
+
+#include <iostream>
+#include <string>
+#include <vector>
+
+class bigint
+{
+	private:
+		std::vector<int> _n;
+
+	public:
+		// OCF
+		bigint();
+		bigint(unsigned int n);
+		bigint(const bigint &other);
+		bigint &operator=(const bigint &other);
+		~bigint();
+
+		// COMPARISON
+		bool operator==(const bigint &other) const;
+		bool operator!=(const bigint &other) const;
+		bool operator<(const bigint &other) const;
+		bool operator<=(const bigint &other) const;
+		bool operator>(const bigint &other) const;
+		bool operator>=(const bigint &other) const;
+
+		// ADDITION
+		bigint operator+(const bigint &other) const;
+		bigint &operator+=(const bigint &other);
+
+		// DIGIT SHIFT
+		bigint operator<<(const bigint &b) const;
+		bigint &operator<<=(const bigint &b);
+		bigint operator>>(const bigint &b) const;
+		bigint &operator>>=(const bigint &b);
+
+		// PREFIX / POSTFIX
+		bigint &operator++();
+		bigint operator++(int n);
+
+		// getter - necessary for the ostream << override
+		const std::vector<int> &getN() const;
+};
+
+std::ostream &operator<<(std::ostream &os, const bigint &b);
+
+#endif
+```
+
+Plus the two free helper functions that live in the `.cpp` (not declared in the header — `static` linkage, file-local):
+
+```cpp
+static std::vector<int> intToVector(unsigned int n);
+static unsigned int vectorToInt(const std::vector<int> &n);
+```
+
+If you can reproduce this skeleton plus the digit-decomposition/recomposition helpers from memory, the remaining work under exam conditions is purely filling in bodies — which is where sections 1, 6, and 7 (storage invariants, addition carry logic, digitshift bounds-checking) matter most.
