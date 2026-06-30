@@ -20,6 +20,12 @@ board and print the result in stdout (each cell alive will be represented l
 the character '0' and each dead cell will be represented by a space)
 each cell outside of the array will be considered dead.
 
+RULES OF THE GAME OF LIFE:
+1. Any live cell with fewer than two live neighbours dies, as if by underpopulation.
+2. Any live cell with two or three live neighbours lives on to the next generation.
+3. Any live cell with more than three live neighbours dies, as if by overpopulation. (not part of subject?)
+4. Any dead cell with exactly three live neighbours becomes a live cell, as if by reproduction
+
 Examples:
 
 $> echo 'sdxddssaaww' | ./a.out 5 5 0 | cat -e
